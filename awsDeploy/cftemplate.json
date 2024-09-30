@@ -1,0 +1,118 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "CloudFormation Template to trigger a Lambda function on S3 file upload.",
+    "Parameters": {
+      "BucketName": {
+        "Type": "String",
+        "Description": "Name of the S3 bucket where files will be uploaded.",
+        "Default": "codewithakshay-s3-sns-event"
+      },
+      "SnsName": {
+        "Type": "String",
+        "Description": "Name of the SNS to handle events produced by s3 bucket for file upload.",
+        "Default": "s3-events-sns"
+      }
+    },
+    "Resources": {
+      "S3EventSNSTopic": {
+        "Type": "AWS::SNS::Topic",
+        "Properties": {
+          "DisplayName": {
+            "Ref": "SnsName"
+          }
+        }
+      },
+      "SNSPermissionToS3Bucket": {
+        "DependsOn": "S3EventSNSTopic",
+        "Type": "AWS::SNS::TopicPolicy",
+        "Properties": {
+          "Topics": [
+            {
+              "Ref": "S3EventSNSTopic"
+            }
+          ],
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "AllowS3ToSendMessage",
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "s3.amazonaws.com"
+                },
+                "Action": "SNS:Publish",
+                "Resource": {
+                    "Ref" : "S3EventSNSTopic"
+                },
+                "Condition": {
+                  "ArnLike": {
+                    "aws:SourceArn": {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:aws:s3:*:*:",
+                          {
+                            "Ref": "BucketName"
+                          }
+                        ]
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "S3Bucket": {
+        "Type": "AWS::S3::Bucket",
+        "DependsOn": "SNSPermissionToS3Bucket",
+        "Properties": {
+          "BucketName": {
+            "Ref": "BucketName"
+          },
+          "NotificationConfiguration": {
+            "TopicConfigurations": [
+              {
+                "Event": "s3:ObjectCreated:*",
+                "Topic": {
+                    "Ref" : "S3EventSNSTopic"
+                },
+                "Filter": {
+                  "S3Key": {
+                    "Rules": [
+                      {
+                        "Name": "prefix",
+                        "Value": "images/"
+                      },
+                      {
+                        "Name": "suffix",
+                        "Value": ".jpg"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Outputs": {
+      "S3BucketName": {
+        "Description": "Name of the S3 bucket",
+        "Value": {
+          "Ref": "S3Bucket"
+        }
+      },
+      "SNSArn": {
+        "Description": "ARN of the SQS Queue",
+        "Value": {
+            "Ref" : "S3EventSNSTopic"
+        },
+        "Export" : {
+            "Name" : {"Fn::Sub": "${SnsName}-SQS" }
+        }
+      }
+    }
+  }
